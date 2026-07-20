@@ -33,6 +33,7 @@
   const MAX_MAP_POINTS = 20;           // plafond de repères affichés simultanément
   const MAP_REFRESH_DELAY = 1000;      // ms d'immobilité avant de rafraîchir la zone
   const MAP_ZONE_MAX_KM = 60;          // au-delà : zone trop vaste, aucun repère
+  const RAYON_RECHERCHE_KM = 20;       // rayon de la recherche initiale (adresse / commune)
 
   const MSG_AUCUN_LIEU = 'Aucun lieu trouvé ici. Déplacez la carte pour explorer une autre zone.';
   const MSG_ZONE_TROP_VASTE = 'Zoomez sur la carte et faites-la défiler, ou cherchez une adresse pour voir apparaître des points.';
@@ -142,6 +143,9 @@
   let _mapRefreshTimer = null;
   let _mapRefreshSeq = 0;
   let _lastBboxResults = [];   // derniers résultats bruts (pour re-filtrer sans re-fetch)
+  // Vrai quand les repères sont mis de côté à cause d'un dézoom au-delà du seuil :
+  // au retour sous le seuil, on les restitue tels quels sans nouvelle recherche.
+  let _masquePourZoneVaste = false;
 
   // =============================================
   // Helpers génériques
@@ -250,6 +254,22 @@
     const r = (v, lim) => Math.round(Math.max(-lim, Math.min(lim, v)) * 10000) / 10000;
     const params = new URLSearchParams({
       bbox: `${r(west, 180)},${r(south, 90)},${r(east, 180)},${r(north, 90)}`,
+      size: ACTEURS_SIZE,
+      select: ACTEURS_SELECT,
+    });
+    return fetchActeursUrl(`${ACTEURS_API}?${params}`);
+  }
+
+  // Recherche autour d'un point, du plus proche au plus loin — utilisée pour la
+  // recherche initiale (adresse ou commune). Sans paramètre `q`, l'API trie
+  // nativement par distance croissante : les N premiers résultats sont donc
+  // bien les N vrais plus proches.
+  function fetchActeursProches(lat, lon, rayonKm) {
+    // Arrondi à 4 décimales (~11 m) : stabilise la clé de cache
+    const latR = Math.round(lat * 10000) / 10000;
+    const lonR = Math.round(lon * 10000) / 10000;
+    const params = new URLSearchParams({
+      geo_distance: `${lonR},${latR},${rayonKm * 1000}`,
       size: ACTEURS_SIZE,
       select: ACTEURS_SELECT,
     });
@@ -418,13 +438,30 @@
     const center = mapInstance.getCenter();
     const seq = ++_mapRefreshSeq;
 
-    // Zone trop vaste : aucun repère, pas d'appel API (règle MVP). La sélection
-    // reste en mémoire : elle réapparaît en revenant à un zoom exploitable.
+    // Zone trop vaste (au-delà du niveau départemental) : aucun repère et aucun
+    // appel API — l'échantillon renvoyé serait trompeur. Les lieux ne sont pas
+    // perdus, seulement mis de côté dans state.acteurs. Le repère rouge de
+    // l'adresse, lui, reste affiché même au-delà du seuil.
     if (isZoneTropVaste(bounds)) {
+      _masquePourZoneVaste = true;
       clearMapMarkers();
       renderUserMarker();
       setMapBanner(MSG_ZONE_TROP_VASTE);
       return;
+    }
+
+    // Retour sous le seuil après un dézoom : on restitue exactement les lieux
+    // mis de côté, sans aller en chercher de nouveaux.
+    if (_masquePourZoneVaste) {
+      _masquePourZoneVaste = false;
+      const restaures = state.acteurs.filter(a => isActeurInBounds(a, bounds) && acteurMatches(a));
+      if (restaures.length > 0) {
+        state.acteurs = restaures;
+        setMapBanner('');
+        renderMarkers();
+        return;
+      }
+      // Aucun lieu mis de côté dans cette zone : on repart sur une recherche normale
     }
 
     try {
@@ -445,6 +482,50 @@
   function scheduleMapZoneRefresh() {
     clearTimeout(_mapRefreshTimer);
     _mapRefreshTimer = setTimeout(refreshMapZone, MAP_REFRESH_DELAY);
+  }
+
+  // Recherche initiale, déclenchée par une adresse, une commune ou la
+  // géolocalisation : les 20 lieux les plus proches dans un rayon de 20 km,
+  // triés par distance, puis cadrage automatique de la carte sur ces lieux.
+  // L'échelle obtenue s'adapte donc d'elle-même à la densité : quartier en
+  // ville dense, intercommunalité en zone rurale.
+  async function rechercheInitiale(lat, lon) {
+    if (!mapInstance) return;
+    const seq = ++_mapRefreshSeq;
+    clearTimeout(_mapRefreshTimer);
+    _masquePourZoneVaste = false;
+
+    try {
+      const data = await fetchActeursProches(lat, lon, RAYON_RECHERCHE_KM);
+      if (seq !== _mapRefreshSeq) return;
+
+      const acteurs = (data.results || [])
+        .filter(a => acteurMatches(a))
+        .map(a => ({ ...a, _distance: haversineKm(
+          lat, lon, parseFloat(a.latitude), parseFloat(a.longitude)) }))
+        .filter(a => !isNaN(a._distance))
+        .sort((a, b) => a._distance - b._distance)
+        .slice(0, MAX_MAP_POINTS);
+
+      state.acteurs = acteurs;
+      _lastBboxResults = data.results || [];
+
+      // Cadrage sur les lieux trouvés + le point recherché. fitBounds est un
+      // déplacement programmatique : il ne relance pas de recherche (seul un
+      // geste de l'usager le fait), les repères restent donc ceux-ci.
+      const bounds = new maplibregl.LngLatBounds();
+      bounds.extend([lon, lat]);
+      acteurs.forEach(a => bounds.extend([parseFloat(a.longitude), parseFloat(a.latitude)]));
+      if (!bounds.isEmpty()) {
+        mapInstance.fitBounds(bounds, { padding: 60, maxZoom: 16, duration: 0 });
+      }
+
+      setMapBanner(acteurs.length > 0 ? '' : MSG_AUCUN_LIEU);
+      renderMarkers();
+    } catch (err) {
+      if (seq !== _mapRefreshSeq) return;
+      console.error('[carte] rechercheInitiale :', err);
+    }
   }
 
   // Ré-applique légende + filtres sur les données déjà chargées, puis complète
@@ -805,15 +886,11 @@
 
   function goToAddress(feature) {
     const [lon, lat] = feature.geometry.coordinates;
+    // « type » vaut municipality pour une commune : dans ce cas, pas de repère
+    // rouge (ce n'est pas une adresse précise) — cf. renderUserMarker.
     const type = feature.properties.type || '';
     state.selectedAddress = { lon, lat, label: feature.properties.label, type };
-    const zoom = type === 'municipality' ? 12.5 : 15;
-    // jumpTo (sans animation) : fiable même quand requestAnimationFrame est
-    // suspendu (onglet en arrière-plan). Puis rafraîchissement direct de la
-    // zone : un déplacement programmatique ne déclenche rien (règle MVP).
-    mapInstance.jumpTo({ center: [lon, lat], zoom });
-    renderUserMarker();
-    refreshMapZone();
+    rechercheInitiale(lat, lon);
   }
 
   function wireAddressSearch(root) {
@@ -872,9 +949,7 @@
             label: 'Ma position',
             type: 'geoloc',
           };
-          mapInstance.jumpTo({ center: [state.selectedAddress.lon, state.selectedAddress.lat], zoom: 14 });
-          renderUserMarker();
-          refreshMapZone();
+          rechercheInitiale(state.selectedAddress.lat, state.selectedAddress.lon);
         },
         () => { btn.disabled = false; },
         { enableHighAccuracy: false, timeout: 8000 }
@@ -900,8 +975,10 @@
         <div class="carte-app__map" id="carte-map"></div>
         ${renderLegende()}
         <p class="carte-app__banner" id="carte-banner" hidden></p>
-        <button type="button" class="fr-btn fr-btn--sm fr-icon-map-pin-2-line carte-app__geoloc"
-                id="carte-geoloc-btn" title="Me localiser">Me localiser</button>
+        <button type="button" class="fr-btn fr-btn--sm carte-app__geoloc"
+                id="carte-geoloc-btn" title="Me localiser" aria-label="Me localiser">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 2 4.5 20.29l.71.71L12 18l6.79 3 .71-.71L12 2Z"/></svg>
+        </button>
       </div>
       <div class="carte-lieu" id="carte-lieu" hidden></div>
     `;
