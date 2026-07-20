@@ -1,0 +1,449 @@
+/* ============================================================
+   Prototype de carte — page « Que faire de mes meubles ? »
+   Style : DSFR uniquement (variables et composants officiels).
+   ============================================================ */
+
+/* ----- Responsive : carte inline en desktop, card + modale en mobile ----- */
+
+#carte-slot-desktop {
+  display: none;
+}
+
+.carte-card-mobile {
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+.carte-card-mobile__img img {
+  background: #dffdf7;
+  object-fit: cover;
+  aspect-ratio: 574 / 300;
+}
+
+@media (min-width: 48em) {
+  #carte-slot-desktop {
+    display: block;
+  }
+
+  .carte-card-mobile {
+    display: none;
+  }
+}
+
+/* ----- Application carte ----- */
+
+.carte-app {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Barre supérieure : recherche d'adresse + bouton filtres */
+.carte-app__topbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.carte-app__address {
+  position: relative;
+  flex: 1 1 16rem;
+  max-width: 26rem;
+}
+
+/* Liste de suggestions d'adresses (API adresse) */
+.carte-app__address-results {
+  position: absolute;
+  z-index: 1000;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  background: var(--background-elevated-grey, #fff);
+  border: 1px solid var(--border-default-grey, #ddd);
+  border-radius: 0.25rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 18, 0.16);
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.carte-app__address-results:empty {
+  display: none;
+}
+
+.carte-app__address-results li {
+  padding: 0;
+}
+
+.carte-app__address-results button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--text-default-grey, #161616);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.carte-app__address-results button:hover,
+.carte-app__address-results button[aria-selected="true"] {
+  background: var(--background-default-grey-hover, #f6f6f6);
+}
+
+/* Bouton filtres compact + badge compteur */
+.carte-app__filter-wrap {
+  position: relative;
+  margin-left: auto;
+}
+
+.carte-app__filter-badge {
+  position: absolute;
+  top: -0.375rem;
+  right: -0.375rem;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: var(--background-active-blue-france, #000091);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.125rem;
+  text-align: center;
+}
+
+/* Panneau de filtres dépliable */
+.carte-app__filters-panel {
+  position: absolute;
+  z-index: 1100;
+  top: calc(100% + 0.375rem);
+  right: 0;
+  width: min(24rem, 88vw);
+  padding: 1rem;
+  background: var(--background-elevated-grey, #fff);
+  border: 1px solid var(--border-default-grey, #ddd);
+  border-radius: 0.25rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 18, 0.16);
+}
+
+.carte-app__filters-panel[hidden] {
+  display: none;
+}
+
+.carte-app__filters-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.carte-app__filters-panel .fr-fieldset {
+  margin-bottom: 0;
+}
+
+.carte-app__filters-panel .fr-fieldset__element {
+  margin-bottom: 0.5rem;
+}
+
+.carte-app__filters-panel .fr-hint-text {
+  margin-top: 0.125rem;
+}
+
+.carte-app__filters-separator {
+  margin: 0.75rem 0;
+  border: 0;
+  border-top: 1px solid var(--border-default-grey, #ddd);
+}
+
+/* Chips des filtres actifs */
+.carte-app__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  width: 100%;
+}
+
+.carte-app__chips:empty {
+  display: none;
+}
+
+/* ----- Zone carte ----- */
+
+.carte-app__map-wrap {
+  position: relative;
+  width: 100%;
+  height: 620px;
+  max-height: 78vh;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--border-default-grey, #ddd);
+}
+
+.carte-app__map {
+  position: absolute;
+  inset: 0;
+}
+
+.carte-app__map .maplibregl-canvas {
+  outline: none;
+}
+
+/* Marqueurs : curseur main */
+.carte-marker {
+  cursor: pointer;
+  line-height: 0;
+}
+
+.carte-user-marker {
+  line-height: 0;
+}
+
+/* Bannière non bloquante (zone trop vaste / aucun lieu) — en bas pour ne pas
+   chevaucher la légende flottante */
+.carte-app__banner {
+  position: absolute;
+  z-index: 500;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(34rem, calc(100% - 2rem));
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--background-elevated-grey, #fff);
+  border-radius: 0.25rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 18, 0.24);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+}
+
+.carte-app__banner[hidden] {
+  display: none;
+}
+
+/* Bouton géolocalisation flottant (sous le zoom, à droite) */
+.carte-app__geoloc {
+  position: absolute;
+  z-index: 500;
+  top: 0.625rem;
+  right: 0.625rem;
+}
+
+/* Zoom MapLibre à droite sous le bouton géoloc */
+.carte-app__map .maplibregl-ctrl-top-right {
+  top: 3rem;
+}
+
+/* ----- Légende flottante (gauche) ----- */
+
+.carte-legende {
+  position: absolute;
+  z-index: 600;
+  top: 0.625rem;
+  left: 0.625rem;
+  max-width: 15rem;
+  background: var(--background-elevated-grey, #fff);
+  border-radius: 0.25rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 18, 0.24);
+}
+
+.carte-legende__toggle.fr-btn {
+  width: 100%;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.carte-legende__toggle.fr-btn::after {
+  transition: transform 0.2s;
+}
+
+.carte-legende__toggle[aria-expanded="false"].fr-btn::after {
+  transform: rotate(180deg);
+}
+
+.carte-legende__body {
+  padding: 0.125rem 0.5rem 0.375rem;
+}
+
+.carte-legende__body[hidden] {
+  display: none;
+}
+
+/* Items compacts : checkbox DSFR resserrée + icône geste + libellé */
+.carte-legende .fr-fieldset {
+  margin: 0;
+}
+
+.carte-legende .fr-fieldset__element {
+  margin: 0 0 0.125rem;
+}
+
+.carte-legende .fr-checkbox-group {
+  margin-top: 0;
+}
+
+.carte-legende .fr-checkbox-group .fr-label {
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+}
+
+/* Icône + libellé alignés, le texte long wrappe à droite de l'icône */
+.carte-legende__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+}
+
+.carte-legende__icone {
+  flex-shrink: 0;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 0.0625rem;
+}
+
+/* ----- Fiche lieu (remplace la carte au clic sur un pin) ----- */
+
+.carte-lieu {
+  border: 1px solid var(--border-default-grey, #ddd);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  min-height: 20rem;
+  max-height: 78vh;
+  overflow-y: auto;
+  background: var(--background-default-grey, #fff);
+}
+
+.carte-lieu[hidden] {
+  display: none;
+}
+
+.carte-lieu__back {
+  margin-bottom: 0.75rem;
+}
+
+.carte-lieu__name {
+  margin: 0.25rem 0 0.125rem;
+  font-size: 1.375rem;
+  line-height: 1.3;
+}
+
+.carte-lieu__meta {
+  margin: 0 0 0.75rem;
+  color: var(--text-mention-grey, #666);
+  font-size: 0.875rem;
+}
+
+.carte-lieu__gestes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.75rem;
+}
+
+.carte-lieu__section-title {
+  margin: 1rem 0 0.375rem;
+  font-size: 1rem;
+}
+
+.carte-lieu__line {
+  margin: 0 0 0.25rem;
+  font-size: 0.9375rem;
+}
+
+.carte-lieu__infos {
+  margin: 0.75rem 0;
+  padding-left: 1.25rem;
+  font-size: 0.9375rem;
+}
+
+.carte-lieu__infos li {
+  margin-bottom: 0.25rem;
+}
+
+/* Expansion des accordéons sans le JS DSFR (qui calcule normalement la hauteur) */
+.carte-lieu .fr-collapse--expanded {
+  max-height: none !important;
+}
+
+.carte-lieu__update {
+  margin-top: 1rem;
+  color: var(--text-mention-grey, #666);
+  font-size: 0.8125rem;
+}
+
+/* ----- Modale mobile plein écran ----- */
+
+/* Gérée hors du moteur DSFR (classe custom) : apparence plein écran ici,
+   composants internes (fr-modal__body, fr-btn--close…) stylés par le DSFR */
+.carte-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: none;
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--background-default-grey, #fff);
+}
+
+.carte-modal--ouverte {
+  display: block;
+}
+
+.carte-modal .fr-container--fluid,
+.carte-modal .fr-grid-row,
+.carte-modal .fr-col-12 {
+  height: 100%;
+}
+
+.carte-modal .carte-modal__body {
+  height: 100dvh;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.carte-modal .carte-modal__content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0;
+}
+
+.carte-modal #carte-slot-mobile {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.carte-modal #carte-slot-mobile .carte-app {
+  flex: 1;
+}
+
+.carte-modal #carte-slot-mobile .carte-app__map-wrap {
+  flex: 1;
+  height: auto;
+  max-height: none;
+}
+
+/* En très petit écran, la légende ne doit pas couvrir toute la carte */
+@media (max-width: 36em) {
+  .carte-legende {
+    max-width: 13rem;
+  }
+}
