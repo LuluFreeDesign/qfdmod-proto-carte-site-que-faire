@@ -53,6 +53,18 @@
   max-width: 44rem;
 }
 
+.carte-app__address-label {
+  margin-bottom: 0.25rem;
+}
+
+/* Sélecteur Carte/Liste + bouton Filtres, groupés à droite */
+.carte-app__actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
 /* Liste de suggestions d'adresses (API adresse) */
 .carte-app__address-results {
   position: absolute;
@@ -158,6 +170,14 @@
   margin-top: 0.125rem;
 }
 
+/* Icône du label (Bonus / ESS / Répar'Acteurs) devant l'intitulé */
+.carte-app__filter-icone {
+  width: 1rem;
+  height: 1rem;
+  vertical-align: -0.1875rem;
+  margin-right: 0.25rem;
+}
+
 .carte-app__filters-separator {
   margin: 0.75rem 0;
   border: 0;
@@ -197,10 +217,20 @@
   outline: none;
 }
 
-/* Marqueurs : curseur main */
+/* Marqueurs : ombre portée et agrandissement au survol (comme l'assistant V2) */
 .carte-marker {
   cursor: pointer;
   line-height: 0;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25));
+  transition: transform 0.15s ease;
+}
+
+.carte-marker:hover {
+  transform: scale(1.1);
+}
+
+.carte-marker svg {
+  display: block;
 }
 
 .carte-user-marker {
@@ -322,6 +352,37 @@
   width: 1.125rem;
   height: 1.125rem;
   margin-top: 0.0625rem;
+}
+
+/* ----- Vue Liste ----- */
+
+.carte-liste {
+  max-height: 78vh;
+  overflow-y: auto;
+  padding: 0.125rem;   /* laisse respirer les ombres de focus des cards */
+}
+
+.carte-liste[hidden] {
+  display: none;
+}
+
+.carte-liste__card {
+  margin-bottom: 0.75rem;
+}
+
+.carte-liste__card .fr-card__title {
+  font-size: 1.125rem;
+}
+
+.carte-liste__vide {
+  margin: 0;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-mention-grey, #666);
+}
+
+.carte-liste .fr-pagination {
+  margin-top: 0.5rem;
 }
 
 /* ----- Fiche lieu (remplace la carte au clic sur un pin) ----- */
@@ -451,6 +512,12 @@
 .carte-modal #carte-slot-mobile .carte-app__map-wrap {
   flex: 1;
   height: auto;
+  max-height: none;
+}
+
+/* En modale, la vue Liste occupe la hauteur restante et défile seule */
+.carte-modal #carte-slot-mobile .carte-liste {
+  flex: 1;
   max-height: none;
 }
 

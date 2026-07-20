@@ -914,6 +914,25 @@ Intégrer notre outil à votre site ou application
 
 </div>
 
+<!-- ============================================================
+     Bandeau « Proposer un nouveau lieu » — volontairement EN DEHORS
+     et EN DESSOUS du bloc carte : ce n'est pas un composant de la
+     carte. En production il sera géré via le CMS (Wagtail / Sites
+     conformes), d'où l'absence de tout code associé dans js/carte.js.
+     ============================================================ -->
+<div class="fr-container fr-mt-4w fr-mb-2w">
+  <div class="fr-callout">
+    <h3 class="fr-callout__title">Un lieu manque à l’appel&nbsp;?</h3>
+    <p class="fr-callout__text">
+      Vous connaissez un lieu qui répare, collecte ou revend des meubles et qui n’apparaît pas sur la carte&nbsp;?
+      Signalez-le-nous pour en faire profiter tout le monde.
+    </p>
+    <a class="fr-btn fr-btn--secondary" href="https://tally.so/r/wzy9ZZ" target="_blank" rel="noopener noreferrer">
+      Proposer un nouveau lieu à ajouter
+    </a>
+  </div>
+</div>
+
 <!-- Modale mobile plein écran contenant la carte.
      Volontairement SANS la classe fr-modal : le moteur JS du DSFR s'approprie
      ces éléments de façon imprévisible sur cette page (analyse partielle) et
