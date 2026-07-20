@@ -35,7 +35,11 @@
   const MAP_ZONE_MAX_KM = 60;          // au-delà : zone trop vaste, aucun repère
   const RAYON_RECHERCHE_KM = 20;       // rayon de la recherche initiale (adresse / commune)
 
-  const MSG_AUCUN_LIEU = 'Aucun lieu trouvé ici. Déplacez la carte pour explorer une autre zone.';
+  const MSG_AUCUN_LIEU = 'Aucun lieu trouvé avec ces critères ici. Déplacez la carte ou modifiez les filtres.';
+  // Vue Liste sans résultat : les deux chemins d'entrée sont proposés, l'adresse
+  // n'étant pas le seul moyen de trouver des lieux (on peut aussi explorer la carte).
+  const MSG_LISTE_VIDE = 'Saisissez une adresse, ou explorez la carte pour voir des lieux.';
+  const SOLUTIONS_PAR_PAGE = 10;
   const MSG_ZONE_TROP_VASTE = 'Zoomez sur la carte et faites-la défiler, ou cherchez une adresse pour voir apparaître des points.';
 
   // Vue initiale : France métropolitaine entière
@@ -135,6 +139,8 @@
     filters: { bonus: false, ess: false, reparActeur: false, hideExclusivite: true },
     selectedAddress: null,   // { lon, lat, label, type }
     acteurs: [],             // repères actuellement affichés
+    vue: 'carte',            // 'carte' | 'liste' — vue active du sélecteur segmenté
+    pageListe: 1,            // pagination de la vue Liste
   };
 
   let mapInstance = null;
@@ -430,6 +436,8 @@
       mapMarkers.push(marker);
     });
     renderUserMarker();
+    // La vue Liste montre toujours exactement la même sélection que la carte
+    renderListe(state.acteurs);
   }
 
   async function refreshMapZone() {
@@ -446,6 +454,7 @@
       _masquePourZoneVaste = true;
       clearMapMarkers();
       renderUserMarker();
+      renderListe([]);   // les lieux sont mis de côté : la liste se vide aussi
       setMapBanner(MSG_ZONE_TROP_VASTE);
       return;
     }
@@ -575,6 +584,130 @@
   }
 
   // =============================================
+  // Vue Liste (pendant de la vue Carte, comme l'assistant V2)
+  // =============================================
+
+  // Distance affichée seulement si une adresse est connue : après une simple
+  // exploration de la carte, _distance vaut la distance au centre de la vue et
+  // non à l'usager — l'afficher serait trompeur.
+  function distanceDepuisAdresse(acteur) {
+    if (!state.selectedAddress) return null;
+    const km = haversineKm(
+      state.selectedAddress.lat, state.selectedAddress.lon,
+      parseFloat(acteur.latitude), parseFloat(acteur.longitude));
+    return isNaN(km) ? null : km;
+  }
+
+  function renderListeCard(acteur) {
+    const nom = acteur.nom_commercial || acteur.nom || 'Lieu sans nom';
+    const service = lieuTypeServiceLabel(acteur);
+    const km = distanceDepuisAdresse(acteur);
+
+    const badges = [];
+    if (isBonusReparation(acteur)) badges.push('<p class="fr-badge fr-badge--sm fr-badge--yellow-tournesol">Bonus Réparation</p>');
+    if (isReparActeur(acteur)) badges.push('<p class="fr-badge fr-badge--sm fr-badge--green-menthe">Répar’Acteurs</p>');
+    if (acteur.type_dacteur === 'ess') badges.push('<p class="fr-badge fr-badge--sm fr-badge--blue-cumulus">Économie sociale et solidaire</p>');
+
+    const gestes = meubleActions(acteur)
+      .map(a => `<p class="fr-tag fr-tag--sm">${ACTION_LABELS[a] || humanizeSlug(a)}</p>`)
+      .join('');
+
+    return `
+      <div class="fr-card fr-card--sm carte-liste__card">
+        <div class="fr-card__body">
+          <div class="fr-card__content">
+            <h4 class="fr-card__title">
+              <button type="button" data-carte-lieu-id="${escapeHtml(acteurId(acteur))}">${escapeHtml(nom)}</button>
+            </h4>
+            <p class="fr-card__desc">${escapeHtml(service)}</p>
+            ${km !== null ? `<div class="fr-card__start"><p class="fr-tag fr-tag--sm fr-icon-map-pin-2-line fr-tag--icon-left">${formatDistance(km)}</p></div>` : ''}
+            ${gestes ? `<div class="fr-card__end"><div class="fr-tags-group fr-tags-group--sm">${gestes}</div></div>` : ''}
+          </div>
+          ${badges.length ? `<div class="fr-card__footer"><div class="fr-badges-group fr-badges-group--sm">${badges.join('')}</div></div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function renderPagination(total, page) {
+    const pages = Math.ceil(total / SOLUTIONS_PAR_PAGE);
+    if (pages <= 1) return '';
+    let items = `<li><a class="fr-pagination__link fr-pagination__link--prev" href="#" data-page="${page - 1}"
+                    ${page === 1 ? 'aria-disabled="true" role="link"' : ''}>Précédent</a></li>`;
+    for (let p = 1; p <= pages; p++) {
+      items += `<li><a class="fr-pagination__link" href="#" data-page="${p}"
+                   ${p === page ? 'aria-current="page"' : ''}>${p}</a></li>`;
+    }
+    items += `<li><a class="fr-pagination__link fr-pagination__link--next" href="#" data-page="${page + 1}"
+                 ${page === pages ? 'aria-disabled="true" role="link"' : ''}>Suivant</a></li>`;
+    return `<nav class="fr-pagination" role="navigation" aria-label="Pagination des lieux">
+              <ul class="fr-pagination__list">${items}</ul>
+            </nav>`;
+  }
+
+  // Rend la vue Liste à partir des lieux passés (par défaut ceux affichés sur la
+  // carte) : les deux vues montrent donc toujours exactement la même sélection.
+  function renderListe(acteurs) {
+    const el = document.getElementById('carte-liste');
+    if (!el) return;
+    const liste = (acteurs || state.acteurs || []).slice();
+
+    if (liste.length === 0) {
+      state.pageListe = 1;
+      el.innerHTML = `<p class="carte-liste__vide">${MSG_LISTE_VIDE}</p>`;
+      return;
+    }
+
+    // Tri par distance à l'adresse quand elle est connue, sinon on conserve
+    // l'ordre de sélection (déjà trié par distance au centre de la vue).
+    if (state.selectedAddress) {
+      liste.sort((a, b) => (distanceDepuisAdresse(a) ?? 0) - (distanceDepuisAdresse(b) ?? 0));
+    }
+
+    const pages = Math.max(1, Math.ceil(liste.length / SOLUTIONS_PAR_PAGE));
+    if (state.pageListe > pages) state.pageListe = pages;
+    const debut = (state.pageListe - 1) * SOLUTIONS_PAR_PAGE;
+    const cards = liste.slice(debut, debut + SOLUTIONS_PAR_PAGE).map(renderListeCard).join('');
+
+    el.innerHTML = cards + renderPagination(liste.length, state.pageListe);
+
+    // Ouverture de la fiche depuis une card
+    el.querySelectorAll('[data-carte-lieu-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cible = liste.find(a => acteurId(a) === btn.dataset.carteLieuId);
+        if (cible) openLieu(cible);
+      });
+    });
+
+    // Pagination
+    el.querySelectorAll('.fr-pagination__link[data-page]').forEach(lien => {
+      lien.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (lien.getAttribute('aria-disabled') === 'true') return;
+        const p = parseInt(lien.dataset.page, 10);
+        if (!isNaN(p) && p >= 1 && p <= pages) {
+          state.pageListe = p;
+          renderListe(acteurs);
+          el.scrollTop = 0;
+        }
+      });
+    });
+  }
+
+  // Bascule Carte / Liste
+  function setVue(vue) {
+    state.vue = vue;
+    const mapWrap = document.getElementById('carte-map-wrap');
+    const liste = document.getElementById('carte-liste');
+    if (!mapWrap || !liste) return;
+    const surCarte = vue === 'carte';
+    mapWrap.hidden = !surCarte;
+    liste.hidden = surCarte;
+    // Le canvas masqué perd ses dimensions : on le recale au retour sur la carte
+    if (surCarte && mapInstance) setTimeout(() => mapInstance.resize(), 50);
+    if (!surCarte) renderListe();
+  }
+
+  // =============================================
   // Fiche lieu (au clic sur un pin — comme le MVP)
   // =============================================
 
@@ -585,9 +718,11 @@
     const chips = document.getElementById('carte-chips');
     if (!lieuEl) return;
 
+    const liste = document.getElementById('carte-liste');
     lieuEl.innerHTML = renderLieuContent(acteur);
     lieuEl.hidden = false;
     mapWrap.hidden = true;
+    if (liste) liste.hidden = true;
     topbar.hidden = true;
     chips.hidden = true;
     lieuEl.scrollTop = 0;
@@ -604,11 +739,10 @@
 
     lieuEl.querySelector('[data-carte-retour]').addEventListener('click', () => {
       lieuEl.hidden = true;
-      mapWrap.hidden = false;
       topbar.hidden = false;
       chips.hidden = false;
-      // Le canvas a pu être masqué pendant un resize : on le recale
-      setTimeout(() => mapInstance && mapInstance.resize(), 50);
+      // On revient sur la vue qui était active avant l'ouverture de la fiche
+      setVue(state.vue);
     });
   }
 
@@ -778,12 +912,14 @@
         </button>
         <span class="carte-app__filter-badge" id="carte-filter-badge" hidden></span>
         <div class="carte-app__filters-panel" id="carte-filters-panel" hidden>
-          <p class="carte-app__filters-title">Filtrer les lieux</p>
+          <p class="carte-app__filters-title">Filtrer les solutions</p>
           <fieldset class="fr-fieldset" aria-label="Filtres">
             <div class="fr-fieldset__element">
               <div class="fr-checkbox-group fr-checkbox-group--sm">
                 <input type="checkbox" id="carte-filter-bonus" data-filter="bonus">
-                <label class="fr-label" for="carte-filter-bonus">Lieux proposant le Bonus Réparation
+                <label class="fr-label" for="carte-filter-bonus">
+                  <img class="carte-app__filter-icone" src="img/icon-bonus-reparation.svg" alt="" aria-hidden="true">
+                  Lieux proposant le Bonus Réparation
                   <span class="fr-hint-text">Uniquement les acteurs proposant le Bonus Réparation.</span>
                 </label>
               </div>
@@ -791,16 +927,20 @@
             <div class="fr-fieldset__element">
               <div class="fr-checkbox-group fr-checkbox-group--sm">
                 <input type="checkbox" id="carte-filter-ess" data-filter="ess">
-                <label class="fr-label" for="carte-filter-ess">Lieux de l’économie sociale et solidaire
-                  <span class="fr-hint-text">Adresses recensées comme relevant de l’ESS.</span>
+                <label class="fr-label" for="carte-filter-ess">
+                  <img class="carte-app__filter-icone" src="img/icon-ess.svg" alt="" aria-hidden="true">
+                  Lieux de l’économie sociale et solidaire
+                  <span class="fr-hint-text">Afficher uniquement les adresses recensées comme relevant de l’économie sociale et solidaire. <a href="https://www.economie.gouv.fr/economie-sociale-et-solidaire-ess" target="_blank" rel="noopener noreferrer">En savoir plus sur economie.gouv.fr</a>.</span>
                 </label>
               </div>
             </div>
             <div class="fr-fieldset__element">
               <div class="fr-checkbox-group fr-checkbox-group--sm">
                 <input type="checkbox" id="carte-filter-reparacteur" data-filter="reparActeur">
-                <label class="fr-label" for="carte-filter-reparacteur">Lieux labellisés Répar’Acteurs
-                  <span class="fr-hint-text">Artisans labellisés par la Chambre des Métiers et de l’Artisanat.</span>
+                <label class="fr-label" for="carte-filter-reparacteur">
+                  <img class="carte-app__filter-icone" src="img/icon-reparacteur.svg" alt="" aria-hidden="true">
+                  Lieux labellisés Répar’Acteurs
+                  <span class="fr-hint-text">Afficher uniquement les artisans labellisés. Les Répar’Acteurs sont une initiative de <a href="https://www.artisanat.fr/nous-connaitre/vous-accompagner/reparacteurs" target="_blank" rel="noopener noreferrer">la Chambre des Métiers et de l’Artisanat</a>.</span>
                 </label>
               </div>
             </div>
@@ -810,7 +950,9 @@
             <div class="fr-fieldset__element">
               <div class="fr-checkbox-group fr-checkbox-group--sm">
                 <input type="checkbox" id="carte-filter-exclusivite" data-filter="hideExclusivite" checked>
-                <label class="fr-label" for="carte-filter-exclusivite">Masquer les lieux qui réparent uniquement les produits de leurs marques</label>
+                <label class="fr-label" for="carte-filter-exclusivite">Masquer les lieux qui réparent uniquement les produits de leurs marques
+                  <span class="fr-hint-text">Les adresses ne réparant que les produits de leur propre marque n’apparaîtront pas si cette case est cochée.</span>
+                </label>
               </div>
             </div>
           </fieldset>
@@ -874,9 +1016,9 @@
   function renderAddressSearch() {
     return `
       <div class="carte-app__address">
+        <label class="fr-label carte-app__address-label" for="carte-address-input">Où souhaitez-vous trouver des solutions&nbsp;?</label>
         <div class="fr-search-bar" role="search">
-          <label class="fr-label" for="carte-address-input">Rechercher une adresse</label>
-          <input class="fr-input" placeholder="Saisissez une adresse ou une ville" type="search"
+          <input class="fr-input" placeholder="ex : 1 rue Simone Veil 93140 Bondy" type="search"
                  id="carte-address-input" autocomplete="off">
           <button type="button" class="fr-btn" title="Rechercher">Rechercher</button>
         </div>
@@ -937,21 +1079,41 @@
 
   function wireGeoloc(root) {
     const btn = root.querySelector('#carte-geoloc-btn');
+    const input = root.querySelector('#carte-address-input');
+
+    // Géocodage inverse : renseigne le champ adresse avec le lieu obtenu, pour
+    // que l'usager voie sur quoi porte la recherche (comme l'assistant V2).
+    async function renseigneAdresse(lat, lon) {
+      try {
+        const resp = await fetch(`https://api-adresse.data.gouv.fr/reverse/?lon=${lon}&lat=${lat}`);
+        if (!resp.ok) return;
+        const json = await resp.json();
+        const f = (json.features || [])[0];
+        if (f && input) input.value = f.properties.label;
+      } catch (e) { /* échec silencieux : la carte reste utilisable */ }
+    }
+
     btn.addEventListener('click', () => {
       if (!navigator.geolocation) return;
       btn.disabled = true;
+      btn.classList.add('carte-app__geoloc--chargement');
+      const fin = () => {
+        btn.disabled = false;
+        btn.classList.remove('carte-app__geoloc--chargement');
+      };
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          btn.disabled = false;
+          fin();
           state.selectedAddress = {
             lon: pos.coords.longitude,
             lat: pos.coords.latitude,
             label: 'Ma position',
-            type: 'geoloc',
+            type: 'geoloc',   // position précise → repère rouge affiché
           };
+          renseigneAdresse(state.selectedAddress.lat, state.selectedAddress.lon);
           rechercheInitiale(state.selectedAddress.lat, state.selectedAddress.lon);
         },
-        () => { btn.disabled = false; },
+        fin,
         { enableHighAccuracy: false, timeout: 8000 }
       );
     });
@@ -968,9 +1130,25 @@
     app.innerHTML = `
       <div class="carte-app__topbar" id="carte-topbar">
         ${renderAddressSearch()}
-        ${renderFilters()}
+        <div class="carte-app__actions">
+          <fieldset class="fr-segmented fr-segmented--sm" id="carte-vue-segmented">
+            <legend class="fr-segmented__legend fr-sr-only">Affichage des résultats</legend>
+            <div class="fr-segmented__elements">
+              <div class="fr-segmented__element">
+                <input value="carte" type="radio" id="carte-vue-carte" name="carte-vue" checked>
+                <label class="fr-label fr-icon-map-pin-2-line" for="carte-vue-carte">Carte</label>
+              </div>
+              <div class="fr-segmented__element">
+                <input value="liste" type="radio" id="carte-vue-liste" name="carte-vue">
+                <label class="fr-label fr-icon-list-unordered" for="carte-vue-liste">Liste</label>
+              </div>
+            </div>
+          </fieldset>
+          ${renderFilters()}
+        </div>
       </div>
       <div class="carte-app__chips" id="carte-chips"></div>
+      <div class="carte-liste" id="carte-liste" hidden></div>
       <div class="carte-app__map-wrap" id="carte-map-wrap">
         <div class="carte-app__map" id="carte-map"></div>
         ${renderLegende()}
@@ -986,6 +1164,9 @@
     wireFilters(app);
     wireAddressSearch(app);
     wireGeoloc(app);
+    app.querySelectorAll('input[name="carte-vue"]').forEach(radio => {
+      radio.addEventListener('change', () => { if (radio.checked) setVue(radio.value); });
+    });
     return app;
   }
 
