@@ -58,10 +58,12 @@
         
 
         
+<!-- CSS DSFR depuis le CDN : les icônes (mask-image) sont soumises à CORS
+     et ne se chargent pas depuis le domaine du site -->
 <link rel="stylesheet"
-      href="https://quefairedemesdechets.ademe.fr/static/dsfr/dist/dsfr/dsfr.min.3f7916c74f76.css">
+      href="https://cdn.jsdelivr.net/npm/@gouvfr/dsfr@1.13.1/dist/dsfr.min.css">
 <link rel="stylesheet"
-      href="https://quefairedemesdechets.ademe.fr/static/dsfr/dist/utility/utility.min.682ac2370208.css">
+      href="https://cdn.jsdelivr.net/npm/@gouvfr/dsfr@1.13.1/dist/utility/utility.min.css">
 <link rel="stylesheet" href="https://quefairedemesdechets.ademe.fr/static/css/dsfr-django-overrides.0f6aed406760.css">
 
 <meta name="theme-color" content="#000091">
@@ -70,6 +72,11 @@
         <link rel="stylesheet" href="https://quefairedemesdechets.ademe.fr/static/qfdmd.60a1f4cdab95.css">
         
         <link href="https://quefairedemesdechets.ademe.fr/static/css/style.f82c5e00c283.css" rel="stylesheet" type="text/css" />
+
+        <!-- Prototype de carte : MapLibre GL + Carte Facile (fond IGN) + styles locaux -->
+        <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@^5.5.0/dist/maplibre-gl.css" />
+        <link rel="stylesheet" href="https://unpkg.com/carte-facile@^0.9.0/dist/carte-facile.css" />
+        <link rel="stylesheet" href="css/carte.css" />
 
         <!-- analytics retirés pour le prototype -->
 
@@ -271,11 +278,11 @@ data-analytics-posthog-debug-value="false"
     >
 
     
-    <!-- Emplacement de la carte : volontairement vide, prototype à construire ici -->
-    <div id="carte-prototype"></div>
+    <!-- Autocomplete du header désactivé dans le prototype (turbo-frame retiré) -->
+    <div></div>
 
 
-    
+
     <div class="peer-aria-[busy]:qf-visible qf-invisible qf-absolute qf-z-50 qf-right-2w qf-top-2w qf-mt-[5px]">
     <div role="status">
     <svg aria-hidden="true" class="qf-inline qf-h-[25px] qf-aspect-square qf-text-grey-900 qf-animate-spin qf-fill-blue-france-sun-113-625" viewBox="0 0 100 101" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -868,12 +875,68 @@ Intégrer notre outil à votre site ou application
     qf-overflow-x-hidden
 ">
 
-    <!-- Emplacement de la carte : volontairement vide, prototype à construire ici -->
-    <div id="carte-prototype"></div>
+    <!-- ============================================================
+         Prototype de carte
+         Desktop (≥ 48em) : la carte s'affiche directement ici.
+         Mobile : une card DSFR invite à ouvrir la carte dans une
+         modale plein écran (navigation plus confortable).
+         ============================================================ -->
+    <div id="carte-prototype">
+
+      <!-- Card mobile (masquée en desktop par css/carte.css) -->
+      <div class="fr-card carte-card-mobile" id="carte-card-mobile">
+        <div class="fr-card__body">
+          <div class="fr-card__content">
+            <h3 class="fr-card__title carte-card-mobile__title">Les lieux près de chez moi</h3>
+            <p class="fr-card__desc">Trouvez les lieux près de chez vous pour réparer, donner, revendre ou déposer&nbsp;!</p>
+          </div>
+          <div class="fr-card__footer">
+            <!-- Ouverture câblée dans js/carte.js via l'API dsfr (l'auto-analyse
+                 du DSFR s'interrompt avant cette section sur cette page) -->
+            <button class="fr-btn fr-btn--secondary" id="carte-open-btn" type="button">
+              Consulter tous les lieux
+            </button>
+          </div>
+        </div>
+        <div class="fr-card__header">
+          <div class="fr-card__img carte-card-mobile__img">
+            <img class="fr-responsive-img" src="img/carte-france-pins.svg" alt="" loading="lazy">
+          </div>
+        </div>
+      </div>
+
+      <!-- Slot desktop : js/carte.js y monte l'application carte -->
+      <div id="carte-slot-desktop"></div>
+
+    </div>
 
 </div>
 
 </div>
+
+<!-- Modale mobile plein écran contenant la carte.
+     Volontairement SANS la classe fr-modal : le moteur JS du DSFR s'approprie
+     ces éléments de façon imprévisible sur cette page (analyse partielle) et
+     ferme la modale au clic. L'apparence DSFR vient des classes internes
+     (fr-modal__body…) et de css/carte.css. -->
+<dialog aria-labelledby="fr-modal-carte-title" id="fr-modal-carte" class="carte-modal">
+  <div class="fr-container fr-container--fluid">
+    <div class="fr-grid-row">
+      <div class="fr-col-12">
+        <div class="fr-modal__body carte-modal__body">
+          <div class="fr-modal__header">
+            <button type="button" class="fr-btn--close fr-btn" title="Fermer la carte" id="carte-close-btn">Fermer</button>
+          </div>
+          <div class="fr-modal__content carte-modal__content">
+            <h1 id="fr-modal-carte-title" class="fr-modal__title fr-sr-only">Les lieux près de chez moi</h1>
+            <!-- Slot mobile : js/carte.js y déplace l'application carte -->
+            <div id="carte-slot-mobile"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
   
 
 
@@ -1871,12 +1934,6 @@ Intégrer notre outil à votre site ou application
 </li>
 
 <li class="fr-footer__bottom-item">
-  <a class="fr-footer__bottom-link" href="/accessibilite/">
-    Accessibilité : partiellement conforme
-  </a>
-</li>
-
-<li class="fr-footer__bottom-item">
   <a class="fr-footer__bottom-link" href="/eco-conception/">
     Éco-conception
   </a>
@@ -1919,16 +1976,19 @@ Intégrer notre outil à votre site ou application
         
 
         
+<!-- JS DSFR depuis le CDN : la copie servie par le site ne s'initialise pas
+     correctement hors de son origine (window.dsfr restait indéfini) -->
 <script type="module"
-        src="https://quefairedemesdechets.ademe.fr/static/dsfr/dist/dsfr/dsfr.module.min.24ff0285c74f.js"
-        ></script>
-<script nomodule
-        src="https://quefairedemesdechets.ademe.fr/static/dsfr/dist/dsfr/dsfr.nomodule.min.3368614641bd.js"
+        src="https://cdn.jsdelivr.net/npm/@gouvfr/dsfr@1.13.1/dist/dsfr.module.min.js"
         ></script>
 
         <!-- bundle applicatif retiré pour le prototype -->
-        
-        
+
+        <!-- Prototype de carte -->
+        <script src="https://unpkg.com/maplibre-gl@^5.5.0/dist/maplibre-gl.js"></script>
+        <script src="https://unpkg.com/carte-facile@^0.9.0/dist/carte-facile.js"></script>
+        <script src="js/carte.js"></script>
+
     </body>
 </html>
 
