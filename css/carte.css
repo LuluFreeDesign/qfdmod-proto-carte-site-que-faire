@@ -224,8 +224,14 @@
 
 /* Marqueur : bouton nu, sans aucune transition ni transformation au survol.
    MapLibre pilote la position via transform ; toute transition dessus ferait
-   « glisser » les repères, et un agrandissement au survol n'est pas souhaité. */
+   « glisser » les repères, et un agrandissement au survol n'est pas souhaité.
+   Le DSFR applique aux éléments interactifs une teinte de survol via les
+   variables --idle/--hover/--active (ici #f6f6f6) : c'est ce carré gris qui
+   apparaissait au survol. On les force à transparent pour la neutraliser. */
 .carte-marker {
+  --idle: transparent;
+  --hover: transparent;
+  --active: transparent;
   cursor: pointer;
   line-height: 0;
   padding: 0;
@@ -261,6 +267,10 @@
 /* Bannière non bloquante (zone trop vaste / aucun lieu), alerte DSFR
    « information » en haut de la carte, centrée. La légende reste à gauche :
    on laisse une gouttière à gauche pour ne pas la chevaucher. */
+/* Conteneur opaque + ombre : l'alerte DSFR a un fond transparent (pensée pour
+   une page, pas une carte). On met le fond blanc et l'ombre sur le CONTENEUR,
+   et on laisse l'alerte afficher son rendu natif (bordure et icône bleues du
+   composant « information ») par-dessus. */
 .carte-app__banner {
   position: absolute;
   z-index: 550;
@@ -269,13 +279,10 @@
   transform: translateX(-50%);
   width: min(32rem, calc(100% - 4rem));
   margin: 0;
-}
-
-/* L'alerte DSFR a un fond transparent par défaut : illisible posée sur la carte.
-   On la rend opaque et on la détache avec une ombre. */
-.carte-app__banner .fr-alert {
   background: var(--background-elevated-grey, #fff);
+  border-radius: 0.25rem;
   box-shadow: 0 2px 8px rgba(0, 0, 18, 0.24);
+  overflow: hidden;
 }
 
 .carte-app__banner[hidden] {
@@ -386,8 +393,21 @@
   display: none;
 }
 
+/* Intro : simple texte (pas un titre) au-dessus des résultats */
+.carte-liste__intro {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-mention-grey, #666);
+}
+
+/* Tableau pleine largeur en mode liste */
 .carte-liste__table {
   margin: 0;
+  width: 100%;
+}
+
+.carte-liste__table table {
+  width: 100%;
 }
 
 /* La distance et le lien restent sur une seule ligne */
@@ -447,6 +467,34 @@
 .carte-pill--donner  { background: #dde9f6; color: #1e4f8c; }
 .carte-pill--vendre  { background: #f6e9e2; color: #6b4a38; }
 .carte-pill--deposer { background: #f3e4f2; color: #6b2a66; }
+
+/* Cards DSFR (mobile) */
+.carte-liste__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.carte-liste__card .fr-card__title {
+  font-size: 1rem;
+}
+
+.carte-liste__card .fr-card__start {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.carte-liste__card-distance {
+  margin: 0.5rem 0 0;
+  font-weight: 700;
+}
+
+.carte-liste__card-distance::before {
+  --icon-size: 1rem;
+  margin-right: 0.25rem;
+}
 
 .carte-liste__vide {
   margin: 0;

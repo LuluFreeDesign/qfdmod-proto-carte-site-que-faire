@@ -610,21 +610,30 @@
     trier:    { label: 'Déposer',  cls: 'deposer', icon: 'img/geste-deposer.svg' },
   };
 
-  // Une ligne <tr> du tableau des lieux
-  function renderListeRangee(acteur) {
-    const nom = acteur.nom_commercial || acteur.nom || 'Lieu sans nom';
-    const km = distanceDepuisAdresse(acteur);
-    const id = escapeHtml(acteurId(acteur));
-
+  // Badges (Bonus / ESS / Répar'Acteurs) d'un lieu
+  function badgesLieu(acteur) {
     const badges = [];
     if (isBonusReparation(acteur)) badges.push('<p class="fr-badge fr-badge--sm fr-badge--yellow-tournesol">Bonus Réparation</p>');
     if (isReparActeur(acteur)) badges.push('<p class="fr-badge fr-badge--sm fr-badge--green-menthe">Répar’Acteurs</p>');
     if (acteur.type_dacteur === 'ess') badges.push('<p class="fr-badge fr-badge--sm fr-badge--blue-cumulus">Économie sociale et solidaire</p>');
+    return badges;
+  }
 
-    const pills = meubleActions(acteur).map(a => {
+  // Pastilles de gestes colorées d'un lieu
+  function pillsLieu(acteur) {
+    return meubleActions(acteur).map(a => {
       const p = ACTION_PILL[a] || { label: ACTION_LABELS[a] || humanizeSlug(a), cls: 'deposer', icon: 'img/geste-deposer.svg' };
       return `<span class="carte-pill carte-pill--${p.cls}"><img src="${p.icon}" alt="" aria-hidden="true">${p.label}</span>`;
     }).join('');
+  }
+
+  // Une ligne <tr> du tableau des lieux (desktop)
+  function renderListeRangee(acteur) {
+    const nom = acteur.nom_commercial || acteur.nom || 'Lieu sans nom';
+    const km = distanceDepuisAdresse(acteur);
+    const id = escapeHtml(acteurId(acteur));
+    const badges = badgesLieu(acteur);
+    const pills = pillsLieu(acteur);
 
     return `
       <tr>
@@ -638,6 +647,33 @@
           <button type="button" class="fr-link fr-link--sm" data-carte-lieu-id="${id}">Voir la fiche</button>
         </td>
       </tr>`;
+  }
+
+  // Une card DSFR d'un lieu (mobile)
+  function renderListeCarte(acteur) {
+    const nom = acteur.nom_commercial || acteur.nom || 'Lieu sans nom';
+    const service = lieuTypeServiceLabel(acteur);
+    const km = distanceDepuisAdresse(acteur);
+    const id = escapeHtml(acteurId(acteur));
+    const badges = badgesLieu(acteur);
+    const pills = pillsLieu(acteur);
+
+    return `
+      <div class="fr-card fr-card--sm carte-liste__card">
+        <div class="fr-card__body">
+          <div class="fr-card__content">
+            <h4 class="fr-card__title">
+              <button type="button" data-carte-lieu-id="${id}">${escapeHtml(nom)}</button>
+            </h4>
+            ${service ? `<p class="fr-card__desc">${escapeHtml(service)}</p>` : ''}
+            <div class="fr-card__start">
+              ${badges.length ? `<div class="carte-liste__badges fr-badges-group fr-badges-group--sm">${badges.join('')}</div>` : ''}
+              ${pills ? `<div class="carte-liste__pills">${pills}</div>` : ''}
+            </div>
+            ${km !== null ? `<div class="fr-card__end"><p class="carte-liste__card-distance fr-icon-map-pin-2-line">${formatDistance(km)}</p></div>` : ''}
+          </div>
+        </div>
+      </div>`;
   }
 
   function renderPagination(total, page) {
@@ -678,26 +714,37 @@
     const pages = Math.max(1, Math.ceil(liste.length / SOLUTIONS_PAR_PAGE));
     if (state.pageListe > pages) state.pageListe = pages;
     const debut = (state.pageListe - 1) * SOLUTIONS_PAR_PAGE;
-    const rangees = liste.slice(debut, debut + SOLUTIONS_PAR_PAGE).map(renderListeRangee).join('');
+    const pageItems = liste.slice(debut, debut + SOLUTIONS_PAR_PAGE);
 
     const n = liste.length;
-    const caption = `${n} lieu${n > 1 ? 'x' : ''} du plus proche au plus loin`;
+    const intro = `${n} lieu${n > 1 ? 'x' : ''} du plus proche au plus loin`;
+
+    // Mobile : cards DSFR. Desktop : tableau DSFR pleine largeur.
+    const surMobile = !window.matchMedia('(min-width: 48em)').matches;
+    let corps;
+    if (surMobile) {
+      corps = `<div class="carte-liste__cards">${pageItems.map(renderListeCarte).join('')}</div>`;
+    } else {
+      corps = `
+        <div class="fr-table fr-table--sm carte-liste__table">
+          <table>
+            <caption class="fr-sr-only">${intro}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Nom du lieu</th>
+                <th scope="col">Actions</th>
+                <th scope="col">Distance</th>
+                <th scope="col"><span class="fr-sr-only">Consulter la fiche</span></th>
+              </tr>
+            </thead>
+            <tbody>${pageItems.map(renderListeRangee).join('')}</tbody>
+          </table>
+        </div>`;
+    }
 
     el.innerHTML = `
-      <div class="fr-table fr-table--sm carte-liste__table">
-        <table>
-          <caption>${caption}</caption>
-          <thead>
-            <tr>
-              <th scope="col">Nom du lieu</th>
-              <th scope="col">Actions</th>
-              <th scope="col">Distance</th>
-              <th scope="col"><span class="fr-sr-only">Consulter la fiche</span></th>
-            </tr>
-          </thead>
-          <tbody>${rangees}</tbody>
-        </table>
-      </div>
+      <p class="carte-liste__intro">${intro}</p>
+      ${corps}
       ${renderPagination(liste.length, state.pageListe)}`;
 
     // Ouverture de la fiche depuis le nom ou le lien « Voir la fiche »
@@ -1217,7 +1264,12 @@
     }
 
     placeApp();
-    mq.addEventListener('change', placeApp);
+    mq.addEventListener('change', () => {
+      placeApp();
+      // Le format de la liste dépend du viewport (cards en mobile, tableau en
+      // desktop) : on la re-rend si elle est affichée.
+      if (state.vue === 'liste') renderListe();
+    });
 
     // Desktop : la carte s'initialise quand elle approche du viewport
     if (mq.matches) {
