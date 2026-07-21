@@ -36,12 +36,17 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  /* Gouttière horizontale : l'ancêtre .qf-overflow-x-hidden rognerait sinon le
+     contour de focus de la barre de recherche collée au bord. */
+  padding: 0 0.375rem;
 }
 
-/* Barre supérieure : recherche d'adresse + bouton filtres */
+/* Barre supérieure : recherche d'adresse + sélecteur Carte/Liste + filtres.
+   Alignement par le bas pour que le sélecteur et les filtres arrivent au niveau
+   de la barre de recherche (qui porte un libellé au-dessus). */
 .carte-app__topbar {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
@@ -217,29 +222,35 @@
   outline: none;
 }
 
-/* Marqueurs. Le wrapper .carte-marker est positionné par MapLibre (transform mis
-   à jour à chaque frame) : il ne doit porter AUCUNE transition, sinon les repères
-   glissent en retard sur la carte. L'ombre et l'agrandissement au survol sont donc
-   isolés sur l'enfant .carte-marker__pin. */
+/* Marqueur : bouton nu, sans aucune transition ni transformation au survol.
+   MapLibre pilote la position via transform ; toute transition dessus ferait
+   « glisser » les repères, et un agrandissement au survol n'est pas souhaité. */
 .carte-marker {
-  line-height: 0;
-}
-
-.carte-marker__pin {
   cursor: pointer;
   line-height: 0;
   padding: 0;
   border: 0;
   background: none;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25));
-  transition: transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.carte-marker__pin:hover {
-  transform: scale(1.1);
+.carte-marker:hover,
+.carte-marker:focus,
+.carte-marker:active {
+  background: none;
+  outline: none;
+  box-shadow: none;
+  transform: none;
 }
 
-.carte-marker__pin svg {
+/* Contour d'accessibilité au clavier uniquement (pas au survol souris) */
+.carte-marker:focus-visible {
+  outline: 2px solid var(--border-active-blue-france, #0a76f6);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.carte-marker svg {
   display: block;
 }
 
@@ -260,7 +271,10 @@
   margin: 0;
 }
 
+/* L'alerte DSFR a un fond transparent par défaut : illisible posée sur la carte.
+   On la rend opaque et on la détache avec une ombre. */
 .carte-app__banner .fr-alert {
+  background: var(--background-elevated-grey, #fff);
   box-shadow: 0 2px 8px rgba(0, 0, 18, 0.24);
 }
 
