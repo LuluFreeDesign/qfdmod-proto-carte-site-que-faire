@@ -399,25 +399,18 @@
     const useBonus = primary === 'reparer' && isBonusReparation(acteur);
     const pinSvg = useBonus ? PIN_BONUS_REPARATION : (PIN_BY_ACTION[primary] || PIN_TRI);
 
-    // Deux niveaux séparés, sinon MapLibre applique son transform de position sur
-    // le même élément que l'effet de survol : sa transition interpolerait alors le
-    // déplacement et les repères « glisseraient » en retard sur la carte.
-    //   - wrapper externe : positionné par MapLibre, aucune transition
-    //   - bouton interne : survol (agrandissement) + ombre + transition
-    const el = document.createElement('div');
+    // Marqueur volontairement minimal : aucune transition (sinon elle
+    // interpolerait le transform de position que MapLibre met à jour à chaque
+    // frame et les repères « glisseraient »), ni agrandissement au survol.
+    const el = document.createElement('button');
+    el.type = 'button';
     el.className = 'carte-marker';
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'carte-marker__pin';
-    btn.setAttribute('aria-label', `Voir la fiche du lieu ${acteur.nom_commercial || acteur.nom || ''}`);
-    btn.innerHTML = pinSvg;
-    btn.addEventListener('click', (e) => {
+    el.setAttribute('aria-label', `Voir la fiche du lieu ${acteur.nom_commercial || acteur.nom || ''}`);
+    el.innerHTML = pinSvg;
+    el.addEventListener('click', (e) => {
       e.stopPropagation();
       openLieu(acteur);
     });
-
-    el.appendChild(btn);
     return el;
   }
 
