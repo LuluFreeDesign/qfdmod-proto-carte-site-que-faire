@@ -380,9 +380,11 @@
     const el = document.getElementById('carte-banner');
     if (!el) return;
     if (message) {
-      el.textContent = message;
+      // Composant DSFR « alerte > information », version petite (sans titre)
+      el.innerHTML = `<div class="fr-alert fr-alert--info fr-alert--sm"><p>${escapeHtml(message)}</p></div>`;
       el.hidden = false;
     } else {
+      el.innerHTML = '';
       el.hidden = true;
     }
   }
@@ -397,18 +399,25 @@
     const useBonus = primary === 'reparer' && isBonusReparation(acteur);
     const pinSvg = useBonus ? PIN_BONUS_REPARATION : (PIN_BY_ACTION[primary] || PIN_TRI);
 
-    const el = document.createElement('button');
-    el.type = 'button';
+    // Deux niveaux séparés, sinon MapLibre applique son transform de position sur
+    // le même élément que l'effet de survol : sa transition interpolerait alors le
+    // déplacement et les repères « glisseraient » en retard sur la carte.
+    //   - wrapper externe : positionné par MapLibre, aucune transition
+    //   - bouton interne : survol (agrandissement) + ombre + transition
+    const el = document.createElement('div');
     el.className = 'carte-marker';
-    el.style.background = 'none';
-    el.style.border = '0';
-    el.style.padding = '0';
-    el.setAttribute('aria-label', `Voir la fiche du lieu ${acteur.nom_commercial || acteur.nom || ''}`);
-    el.innerHTML = pinSvg;
-    el.addEventListener('click', (e) => {
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'carte-marker__pin';
+    btn.setAttribute('aria-label', `Voir la fiche du lieu ${acteur.nom_commercial || acteur.nom || ''}`);
+    btn.innerHTML = pinSvg;
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
       openLieu(acteur);
     });
+
+    el.appendChild(btn);
     return el;
   }
 
@@ -598,34 +607,44 @@
     return isNaN(km) ? null : km;
   }
 
-  function renderListeCard(acteur) {
+  // Pastille de geste colorée (colonne « Actions ») : couleurs et icônes reprises
+  // de la légende, pour une lecture cohérente entre la carte et le tableau.
+  const ACTION_PILL = {
+    reparer:  { label: 'Réparer',  cls: 'reparer', icon: 'img/geste-reparer.svg' },
+    donner:   { label: 'Donner',   cls: 'donner',  icon: 'img/geste-donner.svg' },
+    echanger: { label: 'Échanger', cls: 'donner',  icon: 'img/geste-donner.svg' },
+    revendre: { label: 'Vendre',   cls: 'vendre',  icon: 'img/geste-vendre.svg' },
+    trier:    { label: 'Déposer',  cls: 'deposer', icon: 'img/geste-deposer.svg' },
+  };
+
+  // Une ligne <tr> du tableau des lieux
+  function renderListeRangee(acteur) {
     const nom = acteur.nom_commercial || acteur.nom || 'Lieu sans nom';
-    const service = lieuTypeServiceLabel(acteur);
     const km = distanceDepuisAdresse(acteur);
+    const id = escapeHtml(acteurId(acteur));
 
     const badges = [];
     if (isBonusReparation(acteur)) badges.push('<p class="fr-badge fr-badge--sm fr-badge--yellow-tournesol">Bonus Réparation</p>');
     if (isReparActeur(acteur)) badges.push('<p class="fr-badge fr-badge--sm fr-badge--green-menthe">Répar’Acteurs</p>');
     if (acteur.type_dacteur === 'ess') badges.push('<p class="fr-badge fr-badge--sm fr-badge--blue-cumulus">Économie sociale et solidaire</p>');
 
-    const gestes = meubleActions(acteur)
-      .map(a => `<p class="fr-tag fr-tag--sm">${ACTION_LABELS[a] || humanizeSlug(a)}</p>`)
-      .join('');
+    const pills = meubleActions(acteur).map(a => {
+      const p = ACTION_PILL[a] || { label: ACTION_LABELS[a] || humanizeSlug(a), cls: 'deposer', icon: 'img/geste-deposer.svg' };
+      return `<span class="carte-pill carte-pill--${p.cls}"><img src="${p.icon}" alt="" aria-hidden="true">${p.label}</span>`;
+    }).join('');
 
     return `
-      <div class="fr-card fr-card--sm carte-liste__card">
-        <div class="fr-card__body">
-          <div class="fr-card__content">
-            <h4 class="fr-card__title">
-              <button type="button" data-carte-lieu-id="${escapeHtml(acteurId(acteur))}">${escapeHtml(nom)}</button>
-            </h4>
-            <p class="fr-card__desc">${escapeHtml(service)}</p>
-            ${km !== null ? `<div class="fr-card__start"><p class="fr-tag fr-tag--sm fr-icon-map-pin-2-line fr-tag--icon-left">${formatDistance(km)}</p></div>` : ''}
-            ${gestes ? `<div class="fr-card__end"><div class="fr-tags-group fr-tags-group--sm">${gestes}</div></div>` : ''}
-          </div>
-          ${badges.length ? `<div class="fr-card__footer"><div class="fr-badges-group fr-badges-group--sm">${badges.join('')}</div></div>` : ''}
-        </div>
-      </div>`;
+      <tr>
+        <td>
+          <button type="button" class="carte-liste__nom" data-carte-lieu-id="${id}">${escapeHtml(nom)}</button>
+          ${badges.length ? `<div class="carte-liste__badges fr-badges-group fr-badges-group--sm">${badges.join('')}</div>` : ''}
+        </td>
+        <td>${pills ? `<div class="carte-liste__pills">${pills}</div>` : ''}</td>
+        <td class="carte-liste__distance">${km !== null ? formatDistance(km) : '—'}</td>
+        <td class="carte-liste__voir-cell">
+          <button type="button" class="fr-link fr-link--sm" data-carte-lieu-id="${id}">Voir la fiche</button>
+        </td>
+      </tr>`;
   }
 
   function renderPagination(total, page) {
@@ -666,11 +685,29 @@
     const pages = Math.max(1, Math.ceil(liste.length / SOLUTIONS_PAR_PAGE));
     if (state.pageListe > pages) state.pageListe = pages;
     const debut = (state.pageListe - 1) * SOLUTIONS_PAR_PAGE;
-    const cards = liste.slice(debut, debut + SOLUTIONS_PAR_PAGE).map(renderListeCard).join('');
+    const rangees = liste.slice(debut, debut + SOLUTIONS_PAR_PAGE).map(renderListeRangee).join('');
 
-    el.innerHTML = cards + renderPagination(liste.length, state.pageListe);
+    const n = liste.length;
+    const caption = `${n} lieu${n > 1 ? 'x' : ''} du plus proche au plus loin`;
 
-    // Ouverture de la fiche depuis une card
+    el.innerHTML = `
+      <div class="fr-table fr-table--sm carte-liste__table">
+        <table>
+          <caption>${caption}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Nom du lieu</th>
+              <th scope="col">Actions</th>
+              <th scope="col">Distance</th>
+              <th scope="col"><span class="fr-sr-only">Consulter la fiche</span></th>
+            </tr>
+          </thead>
+          <tbody>${rangees}</tbody>
+        </table>
+      </div>
+      ${renderPagination(liste.length, state.pageListe)}`;
+
+    // Ouverture de la fiche depuis le nom ou le lien « Voir la fiche »
     el.querySelectorAll('[data-carte-lieu-id]').forEach(btn => {
       btn.addEventListener('click', () => {
         const cible = liste.find(a => acteurId(a) === btn.dataset.carteLieuId);
