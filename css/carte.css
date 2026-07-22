@@ -400,14 +400,19 @@
   color: var(--text-mention-grey, #666);
 }
 
-/* Tableau pleine largeur en mode liste */
+/* Tableau pleine largeur en mode liste. Le DSFR met le <table> en display:block
+   (pour le scroll horizontal) : ses colonnes ne s'étirent alors pas et laissent
+   un grand vide à droite. On rétablit display:table pour qu'il remplisse la
+   largeur (la liste passe en cards sous 48em, pas besoin du scroll ici). */
 .carte-liste__table {
   margin: 0;
   width: 100%;
 }
 
 .carte-liste__table table {
+  display: table;
   width: 100%;
+  table-layout: auto;
 }
 
 /* La distance et le lien restent sur une seule ligne */
