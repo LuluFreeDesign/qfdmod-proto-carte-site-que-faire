@@ -1,5 +1,10 @@
 /* ============================================================
-   Prototype de carte — page « Que faire de mes meubles ? »
+   Prototype de carte — pages « Que faire de mes… ? »
+   (Meubles, Emballages en plastique…)
+
+   Script mutualisé : la page cible la sous-catégorie d'objets, les
+   gestes proposés et les filtres affichés via window.CARTE_CONFIG
+   (défini avant ce script). Sans configuration : valeurs Meubles.
 
    Règles fonctionnelles reprises de la carte du MVP assistant V2 :
    - rafraîchissement des lieux de la zone visible après 1 s d'immobilité
@@ -14,7 +19,7 @@
    petit bouton avec badge compteur, panneau dépliable, tags supprimables.
 
    Données : open data ADEME « Acteurs de l'économie circulaire »,
-   filtrées côté client sur la sous-catégorie « meuble » (page Meubles).
+   filtrées côté client sur la ou les sous-catégories de la page.
    ============================================================ */
 (function () {
   'use strict';
@@ -28,7 +33,16 @@
   const ACTEURS_SIZE = '1000';         // plafond accepté par l'API data-fair
   const ACTEURS_CACHE_MAX = 12;        // éviction LRU du cache de réponses
 
-  const SLUG_OBJET = 'meuble';         // page Meubles → sous-catégorie « meuble »
+  // Configuration propre à la page (slugs de sous-catégorie, gestes proposés,
+  // filtres affichés). Définie par la page via window.CARTE_CONFIG avant le
+  // chargement de ce script ; à défaut, valeurs de la page Meubles (rétro-compat).
+  const PAGE_CONFIG = (typeof window !== 'undefined' && window.CARTE_CONFIG) || {};
+
+  // Sous-catégorie(s) d'objets ciblée(s) : un lieu est retenu si l'un de ses
+  // champs d'action contient au moins l'un de ces slugs.
+  const SLUG_OBJETS = Array.isArray(PAGE_CONFIG.slugs) && PAGE_CONFIG.slugs.length
+    ? PAGE_CONFIG.slugs
+    : ['meuble'];                      // page Meubles → sous-catégorie « meuble »
 
   const MAX_MAP_POINTS = 20;           // plafond de repères affichés simultanément
   const MAP_REFRESH_DELAY = 1000;      // ms d'immobilité avant de rafraîchir la zone
@@ -47,12 +61,19 @@
   const FRANCE_ZOOM = 5.1;
 
   // Légende des gestes : libellés demandés, icônes fournies, champs API associés
-  const GESTES = [
+  const ALL_GESTES = [
     { key: 'reparer', label: 'Je répare', icon: 'img/geste-reparer.svg', fields: ['reparer'] },
     { key: 'donner', label: 'Je donne, j’échange', icon: 'img/geste-donner.svg', fields: ['donner', 'echanger'] },
     { key: 'vendre', label: 'Je vends', icon: 'img/geste-vendre.svg', fields: ['revendre'] },
     { key: 'deposer', label: 'Je dépose en point de collecte', icon: 'img/geste-deposer.svg', fields: ['trier'] },
   ];
+
+  // Gestes réellement proposés sur la page (légende + filtrage). Par défaut, tous
+  // (page Meubles) ; la page emballages plastique ne propose que « Je dépose ».
+  const ACTIVE_GESTE_KEYS = Array.isArray(PAGE_CONFIG.gestes) && PAGE_CONFIG.gestes.length
+    ? PAGE_CONFIG.gestes
+    : ALL_GESTES.map(g => g.key);
+  const GESTES = ALL_GESTES.filter(g => ACTIVE_GESTE_KEYS.includes(g.key));
 
   // Priorité d'action pour choisir le pin d'un lieu multi-gestes
   const MARKER_PRIORITY = ['reparer', 'revendre', 'echanger', 'donner', 'trier'];
@@ -123,20 +144,30 @@
   // Filtres (scope testé et validé du prototype assistant)
   // =============================================
 
-  const FILTER_DEFS = [
+  const ALL_FILTER_DEFS = [
     { key: 'bonus', chipLabel: 'Bonus Réparation', reject: a => !isBonusReparation(a) },
     { key: 'ess', chipLabel: 'Économie sociale et solidaire', reject: a => a.type_dacteur !== 'ess' },
     { key: 'reparActeur', chipLabel: 'Répar’Acteurs', reject: a => !isReparActeur(a) },
     { key: 'hideExclusivite', chipLabel: 'Sans réparateurs de marque', reject: a => String(a.exclusivite_de_reprisereparation || '').toLowerCase() === 'oui' },
   ];
 
+  // Filtres affichés sur la page. Par défaut, tous (page Meubles). Une page peut
+  // restreindre via window.CARTE_CONFIG.filterKeys ; [] masque le bouton Filtres
+  // (page emballages plastique : dépôt uniquement, filtres réparation sans objet).
+  const ACTIVE_FILTER_KEYS = Array.isArray(PAGE_CONFIG.filterKeys)
+    ? PAGE_CONFIG.filterKeys
+    : ALL_FILTER_DEFS.map(d => d.key);
+  const FILTER_DEFS = ALL_FILTER_DEFS.filter(d => ACTIVE_FILTER_KEYS.includes(d.key));
+
   // =============================================
   // État
   // =============================================
 
   const state = {
-    gestes: { reparer: true, donner: true, vendre: true, deposer: true }, // légende : tout coché
-    filters: { bonus: false, ess: false, reparActeur: false, hideExclusivite: true },
+    // Légende : seuls les gestes proposés par la page sont cochés (les autres
+    // restent à false pour ne pas entrer dans le filtrage côté client).
+    gestes: Object.fromEntries(ALL_GESTES.map(g => [g.key, ACTIVE_GESTE_KEYS.includes(g.key)])),
+    filters: { bonus: false, ess: false, reparActeur: false, hideExclusivite: ACTIVE_FILTER_KEYS.includes('hideExclusivite') },
     selectedAddress: null,   // { lon, lat, label, type }
     acteurs: [],             // repères actuellement affichés
     vue: 'carte',            // 'carte' | 'liste' — vue active du sélecteur segmenté
@@ -291,36 +322,38 @@
     return GESTES.filter(g => state.gestes[g.key]).flatMap(g => g.fields);
   }
 
-  // Vrai si le champ d'action de l'acteur concerne les meubles
-  function fieldHasMeuble(acteur, field) {
+  // Vrai si le champ d'action de l'acteur concerne la sous-catégorie ciblée
+  // (l'un des slugs de SLUG_OBJETS).
+  function fieldHasObjet(acteur, field) {
     const val = acteur[field] || '';
     if (!val.trim()) return false;
-    return val.split(' | ').map(s => s.trim()).includes(SLUG_OBJET);
+    const cats = val.split(' | ').map(s => s.trim());
+    return SLUG_OBJETS.some(slug => cats.includes(slug));
   }
 
-  // Un lieu est retenu s'il propose au moins un geste coché pour les meubles
+  // Un lieu est retenu s'il propose au moins un geste coché pour l'objet ciblé
   // et s'il passe les filtres actifs.
   function acteurMatches(acteur) {
     const fields = checkedActionFields();
-    if (!fields.some(f => fieldHasMeuble(acteur, f))) return false;
+    if (!fields.some(f => fieldHasObjet(acteur, f))) return false;
     const f = state.filters;
     return FILTER_DEFS.every(def => !f[def.key] || !def.reject(acteur));
   }
 
   // Action retenue pour le pin : priorité MARKER_PRIORITY, restreinte aux
-  // champs des gestes cochés qui concernent les meubles.
+  // champs des gestes cochés qui concernent l'objet ciblé.
   function primaryActionFor(acteur) {
     const fields = checkedActionFields();
     for (const a of MARKER_PRIORITY) {
-      if (fields.includes(a) && fieldHasMeuble(acteur, a)) return a;
+      if (fields.includes(a) && fieldHasObjet(acteur, a)) return a;
     }
     return 'trier';
   }
 
-  // Toutes les actions « meubles » du lieu (pour la fiche), gestes cochés ou non
-  function meubleActions(acteur) {
+  // Toutes les actions du lieu pour l'objet ciblé (pour la fiche), gestes cochés ou non
+  function objetActions(acteur) {
     const all = ['reparer', 'donner', 'echanger', 'revendre', 'trier'];
-    return all.filter(a => fieldHasMeuble(acteur, a));
+    return all.filter(a => fieldHasObjet(acteur, a));
   }
 
   // =============================================
@@ -621,7 +654,7 @@
 
   // Pastilles de gestes colorées d'un lieu
   function pillsLieu(acteur) {
-    return meubleActions(acteur).map(a => {
+    return objetActions(acteur).map(a => {
       const p = ACTION_PILL[a] || { label: ACTION_LABELS[a] || humanizeSlug(a), cls: 'deposer', icon: 'img/geste-deposer.svg' };
       return `<span class="carte-pill carte-pill--${p.cls}"><img src="${p.icon}" alt="" aria-hidden="true">${p.label}</span>`;
     }).join('');
@@ -840,8 +873,8 @@
     if (isReparActeur(acteur)) badges.push('<p class="fr-badge fr-badge--green-menthe fr-badge--sm">Répar’Acteurs</p>');
     if (acteur.type_dacteur === 'ess') badges.push('<p class="fr-badge fr-badge--blue-cumulus fr-badge--sm">Économie sociale et solidaire</p>');
 
-    // Gestes proposés pour les meubles
-    const gestes = meubleActions(acteur)
+    // Gestes proposés pour l'objet ciblé
+    const gestes = objetActions(acteur)
       .map(a => `<p class="fr-tag fr-tag--sm">${ACTION_LABELS[a] || humanizeSlug(a)}</p>`)
       .join('');
 
@@ -981,6 +1014,8 @@
   // =============================================
 
   function renderFilters() {
+    // Aucun filtre configuré pour la page → pas de bouton Filtres.
+    if (!FILTER_DEFS.length) return '';
     return `
       <div class="carte-app__filter-wrap">
         <button type="button" class="fr-btn fr-btn--tertiary fr-btn--sm fr-icon-filter-line fr-btn--icon-left"
@@ -1052,6 +1087,7 @@
     });
 
     const badge = root.querySelector('#carte-filter-badge');
+    if (!badge) return;   // page sans filtres (badge non rendu)
     const count = FILTER_DEFS.filter(def => state.filters[def.key]).length;
     badge.textContent = String(count);
     badge.hidden = count === 0;
@@ -1068,6 +1104,7 @@
   function wireFilters(root) {
     const btn = root.querySelector('#carte-filter-btn');
     const panel = root.querySelector('#carte-filters-panel');
+    if (!btn || !panel) return;   // page sans filtres (bouton non rendu)
     btn.addEventListener('click', () => {
       const expanded = btn.getAttribute('aria-expanded') === 'true';
       btn.setAttribute('aria-expanded', String(!expanded));
