@@ -2010,10 +2010,25 @@ Intégrer notre outil à votre site ou application
           // Cette page cible les emballages en plastique (dépôt uniquement).
           // Slugs de sous-catégorie du jeu de données « Acteurs de l'économie
           // circulaire » correspondant au bac de tri (poubelle jaune).
+          //
+          // Source « local » : carte déconnectée de l'open data ADEME (voir
+          // les échanges du 2026-07-24 — l'export public a un décalage de
+          // fraîcheur trop important pour tester les règles fonctionnelles
+          // sereinement). À la place : un jeu de données de démonstration
+          // généré à partir du réseau de rues réel d'OpenStreetMap sur
+          // l'EPCI Auray Quiberon Terre Atlantique (24 communes), avec un
+          // point de collecte plastique par rue (~3570 lieux). Les mêmes
+          // règles fonctionnelles s'appliquent : rafraîchissement au
+          // déplacement de la carte, plafond de 20 repères triés par
+          // distance, zone trop vaste au-delà de 60 km, etc.
           window.CARTE_CONFIG = {
             slugs: ['bouteilles_plastique', 'emballage_plastique', 'autres_emballages_menagers'],
             gestes: ['deposer'],
-            filterKeys: []
+            filterKeys: [],
+            source: 'local',
+            localDataUrl: 'data/acteurs-demo-auray.json',
+            initialCenter: [-2.9901, 47.6684],
+            initialZoom: 13.3
           };
         </script>
         <script src="https://unpkg.com/maplibre-gl@^5.5.0/dist/maplibre-gl.js"></script>
