@@ -44,6 +44,14 @@
     ? PAGE_CONFIG.slugs
     : ['meuble'];                      // page Meubles → sous-catégorie « meuble »
 
+  // Source des données : 'api' (open data ADEME, par défaut) ou 'local' (jeu de
+  // données statique fourni par la page, ex. démo territoriale déconnectée de
+  // l'open data). En mode local, les mêmes règles fonctionnelles s'appliquent
+  // (bbox, rayon, tri par distance, plafond de 20 repères, zone trop vaste…) —
+  // seule la source des acteurs change.
+  const DATA_SOURCE = PAGE_CONFIG.source === 'local' ? 'local' : 'api';
+  const LOCAL_DATA_URL = PAGE_CONFIG.localDataUrl || null;
+
   const MAX_MAP_POINTS = 20;           // plafond de repères affichés simultanément
   const MAP_REFRESH_DELAY = 1000;      // ms d'immobilité avant de rafraîchir la zone
   const MAP_ZONE_MAX_KM = 60;          // au-delà : zone trop vaste, aucun repère
@@ -56,9 +64,12 @@
   const SOLUTIONS_PAR_PAGE = 10;
   const MSG_ZONE_TROP_VASTE = 'Zoomez sur la carte et faites-la défiler, ou cherchez une adresse pour voir apparaître des points.';
 
-  // Vue initiale : France métropolitaine entière
+  // Vue initiale : France métropolitaine entière, sauf si la page en demande
+  // une autre (ex. démo centrée sur un territoire dont c'est l'unique donnée).
   const FRANCE_CENTER = [2.6, 46.8];
   const FRANCE_ZOOM = 5.1;
+  const INITIAL_CENTER = Array.isArray(PAGE_CONFIG.initialCenter) ? PAGE_CONFIG.initialCenter : FRANCE_CENTER;
+  const INITIAL_ZOOM = typeof PAGE_CONFIG.initialZoom === 'number' ? PAGE_CONFIG.initialZoom : FRANCE_ZOOM;
 
   // Légende des gestes : libellés demandés, icônes fournies, champs API associés
   const ALL_GESTES = [
@@ -286,8 +297,37 @@
     }
   }
 
+  // =============================================
+  // Jeu de données local (mode 'local' : démo territoriale déconnectée de
+  // l'open data). Chargé une seule fois puis filtré/trié en mémoire — les
+  // mêmes règles fonctionnelles (bbox, rayon, tri, plafonds…) s'appliquent
+  // ensuite, identiques au mode 'api'.
+  // =============================================
+
+  let _localDatasetPromise = null;
+
+  function loadLocalDataset() {
+    if (!_localDatasetPromise) {
+      _localDatasetPromise = fetch(LOCAL_DATA_URL).then(resp => {
+        if (!resp.ok) throw new Error(`Erreur chargement du jeu de données local (${resp.status})`);
+        return resp.json();
+      });
+    }
+    return _localDatasetPromise;
+  }
+
   // Recherche dans le rectangle visible (bornage des coordonnées : règle MVP)
   function fetchActeursBbox(west, south, east, north) {
+    if (DATA_SOURCE === 'local') {
+      const r = (v, lim) => Math.max(-lim, Math.min(lim, v));
+      const w = r(west, 180), s = r(south, 90), e = r(east, 180), n = r(north, 90);
+      return loadLocalDataset().then(all => ({
+        results: all.filter(a => {
+          const lat = parseFloat(a.latitude), lon = parseFloat(a.longitude);
+          return lat >= s && lat <= n && lon >= w && lon <= e;
+        }),
+      }));
+    }
     const r = (v, lim) => Math.round(Math.max(-lim, Math.min(lim, v)) * 10000) / 10000;
     const params = new URLSearchParams({
       bbox: `${r(west, 180)},${r(south, 90)},${r(east, 180)},${r(north, 90)}`,
@@ -302,6 +342,14 @@
   // nativement par distance croissante : les N premiers résultats sont donc
   // bien les N vrais plus proches.
   function fetchActeursProches(lat, lon, rayonKm) {
+    if (DATA_SOURCE === 'local') {
+      return loadLocalDataset().then(all => ({
+        results: all.filter(a => {
+          const alat = parseFloat(a.latitude), alon = parseFloat(a.longitude);
+          return haversineKm(lat, lon, alat, alon) <= rayonKm;
+        }),
+      }));
+    }
     // Arrondi à 4 décimales (~11 m) : stabilise la clé de cache
     const latR = Math.round(lat * 10000) / 10000;
     const lonR = Math.round(lon * 10000) / 10000;
@@ -597,8 +645,8 @@
     mapInstance = new maplibregl.Map({
       container: 'carte-map',
       style,
-      center: FRANCE_CENTER,
-      zoom: FRANCE_ZOOM,
+      center: INITIAL_CENTER,
+      zoom: INITIAL_ZOOM,
       maxZoom: 18.9,
       attributionControl: false,
     });
